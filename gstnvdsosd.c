@@ -134,7 +134,7 @@ static gboolean gst_nvds_osd_parse_color (GstNvDsOsd * nvdsosd,
     guint clock_color);
 static gboolean gst_nvdsosd_sink_event (GstBaseTransform * trans,
     GstEvent * event);
-static gboolean dump_info(GstNvDsOsd * nvdsosd);
+static gboolean osd_draw_mosaic(GstNvDsOsd * nvdsosd);
 
 static gboolean
 gst_nvdsosd_sink_event (GstBaseTransform * trans, GstEvent * event)
@@ -565,16 +565,12 @@ gst_nvds_osd_transform_ip (GstBaseTransform * trans, GstBuffer * buf)
   nvdsosd->num_lines = line_cnt;
   nvdsosd->num_arrows = arrow_cnt;
   nvdsosd->num_circles = circle_cnt;
-  // printf("total rects: %d, segments: %d, strings: %d\n", rect_cnt, segment_cnt, text_cnt);
-  if (rect_cnt != 0 && nvdsosd->draw_bbox) {
+  if (rect_cnt != 0 && nvdsosd->draw_bbox && !nvdsosd->enable_mosaic) {
     nvdsosd->frame_rect_params->num_rects = nvdsosd->num_rect;
     nvdsosd->frame_rect_params->rect_params_list = nvdsosd->rect_params;
-    /** Use of buf_ptr is deprecated, use 'nvdsosd->frame_rect_params->surf' instead */
     nvdsosd->frame_rect_params->buf_ptr = NULL;
     nvdsosd->frame_rect_params->mode = nvdsosd->nvdsosd_mode;
     nvdsosd->frame_rect_params->surf = surface;
-    // clock_t start_time = clock();
-    // dump_info(nvdsosd);
     // clock_t start_time = clock();
     if (nvll_osd_draw_rectangles (nvdsosd->nvdsosd_context,
             nvdsosd->frame_rect_params) == -1) {
@@ -582,11 +578,6 @@ gst_nvds_osd_transform_ip (GstBaseTransform * trans, GstBuffer * buf)
           ("Unable to draw rectangles"), NULL);
       return GST_FLOW_ERROR;
     }
-    // clock_t end_time = clock();
-    // double duration_ms = (double)(end_time - start_time) / CLOCKS_PER_SEC * 1000;
-    // printf("time usage of official func: %fms\n", duration_ms); 
-    // 在刚开始在4ms，后面平均都低于1ms
-
   }
 
   if (segment_cnt != 0 && nvdsosd->draw_mask) {
@@ -673,14 +664,12 @@ gst_nvds_osd_transform_ip (GstBaseTransform * trans, GstBuffer * buf)
     nvdsosd->frame_rect_params->mode = nvdsosd->nvdsosd_mode;
     nvdsosd->frame_rect_params->surf = surface;
     // clock_t start_time = clock();
-    dump_info(nvdsosd);
+    if (osd_draw_mosaic(nvdsosd) == -1) {
+      GST_ELEMENT_ERROR (nvdsosd, RESOURCE, FAILED,
+          ("Unable to draw mosaic"), NULL);
+      return GST_FLOW_ERROR;
+    }
     // clock_t start_time = clock();
-    // if (nvll_osd_draw_rectangles (nvdsosd->nvdsosd_context,
-    //         nvdsosd->frame_rect_params) == -1) {
-    //   GST_ELEMENT_ERROR (nvdsosd, RESOURCE, FAILED,
-    //       ("Unable to draw rectangles"), NULL);
-    //   return GST_FLOW_ERROR;
-    // }
     // clock_t end_time = clock();
     // double duration_ms = (double)(end_time - start_time) / CLOCKS_PER_SEC * 1000;
     // printf("time usage of official func: %fms\n", duration_ms); 
@@ -704,7 +693,7 @@ gst_nvds_osd_transform_ip (GstBaseTransform * trans, GstBuffer * buf)
   return GST_FLOW_OK;
 }
 
-static gboolean dump_info(GstNvDsOsd *nvdsosd) {   
+static gboolean osd_draw_mosaic(GstNvDsOsd *nvdsosd) {   
     NvOSD_FrameRectParams *frame_rect_params = nvdsosd->frame_rect_params;
     NvBufSurface *surface = frame_rect_params->surf;
     if (!surface) {
